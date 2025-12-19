@@ -251,13 +251,57 @@ def test_upload_and_endpoints():
     save_video_frames([np.full((32,32,3), 150, dtype=np.uint8) for _ in range(5)], str(out_path), fps=5.0)
     srv.update_job_status(job_id, 'completed', output_path=str(out_path), file_size=out_path.stat().st_size)
 
-    # Download processed result
+    # Download processed result (full)
     dr = client.get(f"/download/{job_id}")
     if dr.status_code != 200:
         print(f"✗ Failed to download processed file: {dr.status_code}")
         return False
 
+    # Try Range request
+    headers = {'Range': 'bytes=0-1023'}
+    dr2 = client.get(f"/download/{job_id}", headers=headers)
+    if dr2.status_code not in (200, 206):
+        print(f"✗ Range download failed: {dr2.status_code}")
+        return False
+
     print('✓ Upload and endpoints working')
+    return True
+
+
+def test_end_to_end_streaming_processing():
+    """Run a synchronous streaming processing job (watermark removal) and download result"""
+    print("\nTesting end-to-end streaming processing...")
+
+    from fastapi.testclient import TestClient
+    import server as srv
+    import asyncio
+
+    client = TestClient(srv.app)
+
+    # Create a small synthetic input
+    tmp_input = Path('temp/uploads/e2e_sample.mp4')
+    if not tmp_input.exists():
+        save_video_frames([np.full((64,64,3), 80, dtype=np.uint8) for _ in range(20)], str(tmp_input), fps=10.0)
+
+    # Create a job id and register input metadata
+    job_id = generate_file_id()
+    srv.update_job_status(job_id, 'uploading', input_path=str(tmp_input), filename=tmp_input.name, input_url=f"/upload/{job_id}/input")
+
+    # Run processing synchronously (call async task directly)
+    asyncio.run(srv.process_video_task(job_id, 'watermark-removal', str(tmp_input), {}))
+
+    status = srv.get_job_status(job_id)
+    if status.get('status') != 'completed':
+        print(f"✗ Processing did not complete: {status}")
+        return False
+
+    # Download the processed file
+    dr = client.get(f"/download/{job_id}")
+    if dr.status_code != 200:
+        print(f"✗ Failed to download processed file after processing: {dr.status_code}")
+        return False
+
+    print('✓ End-to-end streaming processing works')
     return True
 
 
