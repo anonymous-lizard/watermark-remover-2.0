@@ -139,7 +139,7 @@ def test_html_pages():
             return False
 
         # Check if file has basic HTML structure
-        with open(html_file, 'r') as f:
+        with open(html_file, 'r', encoding='utf-8') as f:
             content = f.read()
             if '<!DOCTYPE html>' not in content or '<title>' not in content:
                 print(f"✗ Invalid HTML structure in: {html_file}")

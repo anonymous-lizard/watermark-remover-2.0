@@ -266,7 +266,7 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
 async def home():
     """Serve home page"""
     try:
-        with open("static/index.html", "r") as f:
+        with open("static/index.html", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         return "<h1>Sora Video Processor</h1><p>Home page not found</p>"
@@ -289,7 +289,7 @@ async def tool_page(tool_name: str):
         raise HTTPException(status_code=404, detail="Tool not found")
 
     try:
-        with open(f"static/{tool_files[tool_name]}", "r") as f:
+        with open(f"static/{tool_files[tool_name]}", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         return f"<h1>{tool_name.replace('-', ' ').title()}</h1><p>Tool page not found</p>"
