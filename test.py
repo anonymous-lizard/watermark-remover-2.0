@@ -210,6 +210,57 @@ def test_basic_processing():
     return True
 
 
+def test_upload_and_endpoints():
+    """Test upload endpoint, uploaded file access, and download after marking completed"""
+    print("\nTesting upload & endpoint integration...")
+
+    from fastapi.testclient import TestClient
+    import server as srv
+
+    client = TestClient(srv.app)
+
+    # Create a small synthetic file
+    tmp_input = Path('temp/uploads/integration_sample.mp4')
+    if not tmp_input.exists():
+        save_video_frames([np.full((32,32,3), 100, dtype=np.uint8) for _ in range(5)], str(tmp_input), fps=5.0)
+
+    with open(tmp_input, 'rb') as f:
+        files = {'file': ('integration_sample.mp4', f, 'video/mp4')}
+        response = client.post('/process/watermark-removal', files=files)
+
+    if response.status_code != 200:
+        print(f"✗ Upload failed: {response.status_code} {response.text}")
+        return False
+
+    json_resp = response.json()
+    job_id = json_resp.get('job_id')
+    input_url = json_resp.get('input_url')
+
+    if not job_id or not input_url:
+        print('✗ Missing job_id or input_url in response')
+        return False
+
+    # Access the uploaded input via the provided URL
+    r = client.get(input_url)
+    if r.status_code != 200:
+        print(f"✗ Failed to fetch uploaded input: {r.status_code}")
+        return False
+
+    # Simulate completion by creating output and updating status
+    out_path = Path('temp/outputs') / f"{job_id}_processed.mp4"
+    save_video_frames([np.full((32,32,3), 150, dtype=np.uint8) for _ in range(5)], str(out_path), fps=5.0)
+    srv.update_job_status(job_id, 'completed', output_path=str(out_path), file_size=out_path.stat().st_size)
+
+    # Download processed result
+    dr = client.get(f"/download/{job_id}")
+    if dr.status_code != 200:
+        print(f"✗ Failed to download processed file: {dr.status_code}")
+        return False
+
+    print('✓ Upload and endpoints working')
+    return True
+
+
 def main():
     """Run all tests"""
     print("🧪 Sora Video Processor - Test Suite")

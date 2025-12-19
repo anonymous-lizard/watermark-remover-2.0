@@ -100,7 +100,7 @@ class VideoProcessor {
             return;
         }
 
-        // Show selected file
+        // Show selected file and inline preview
         const uploadArea = document.getElementById('upload-area');
         if (uploadArea) {
             uploadArea.innerHTML = `
@@ -109,6 +109,19 @@ class VideoProcessor {
                 <p>Size: ${(file.size / (1024 * 1024)).toFixed(1)} MB</p>
                 <button class="upload-btn" onclick="location.reload()">Choose Different File</button>
             `;
+        }
+
+        // Show inline preview if possible
+        try {
+            const previewSection = document.getElementById('preview-section');
+            const previewVideo = document.getElementById('preview-video');
+            if (previewVideo && previewSection) {
+                const objectUrl = URL.createObjectURL(file);
+                previewVideo.src = objectUrl;
+                previewSection.classList.remove('hidden');
+            }
+        } catch (e) {
+            // ignore preview errors
         }
 
         this.selectedFile = file;
@@ -155,6 +168,17 @@ class VideoProcessor {
 
             const result = await response.json();
             this.jobId = result.job_id;
+
+            // If server returned an input_url, set the 'View Uploaded' button
+            if (result.input_url) {
+                try {
+                    const viewBtn = document.getElementById('view-uploaded-btn');
+                    if (viewBtn) {
+                        viewBtn.href = result.input_url;
+                        viewBtn.classList.remove('hidden');
+                    }
+                } catch (e) {}
+            }
 
             // Start progress monitoring
             this.startProgressMonitoring();

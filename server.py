@@ -335,12 +335,17 @@ async def process_video(
 
         # Create job
         job_id = generate_file_id()
-        update_job_status(job_id, "uploading")
+        # Store upload metadata so clients can preview or download the uploaded file
+        update_job_status(job_id, "uploading",
+                          input_path=str(input_path),
+                          input_url=f"/upload/{job_id}/input",
+                          filename=Path(input_path).name,
+                          file_size=Path(input_path).stat().st_size)
 
         # Start background processing
         background_tasks.add_task(process_video_task, job_id, tool_name, input_path, parsed_options)
 
-        return {"job_id": job_id, "status": "processing"}
+        return {"job_id": job_id, "status": "processing", "input_url": f"/upload/{job_id}/input"}
 
     except HTTPException:
         raise
@@ -369,10 +374,29 @@ async def download_result(job_id: str):
     if not output_path or not Path(output_path).exists():
         raise HTTPException(status_code=404, detail="Output file not found")
 
+    # Try to determine content type based on file extension
     return FileResponse(
         output_path,
         media_type='video/mp4',
         filename=f"sora_processed_{job_id}.mp4"
+    )
+
+
+@app.get('/upload/{job_id}/input')
+async def get_uploaded_input(job_id: str):
+    """Serve the original uploaded input video for preview/download"""
+    status = get_job_status(job_id)
+    if status.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    input_path = status.get("input_path") or status.get("inputPath")
+    if not input_path or not Path(input_path).exists():
+        raise HTTPException(status_code=404, detail="Input file not found")
+
+    return FileResponse(
+        input_path,
+        media_type='video/mp4',
+        filename=status.get('filename') or Path(input_path).name
     )
 
 @app.delete("/cleanup/{job_id}")
