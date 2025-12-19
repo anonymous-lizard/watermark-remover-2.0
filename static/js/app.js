@@ -100,15 +100,16 @@ class VideoProcessor {
             return;
         }
 
-        // Show selected file and inline preview
-        const uploadArea = document.getElementById('upload-area');
-        if (uploadArea) {
-            uploadArea.innerHTML = `
-                <div style="font-size: 2rem; margin-bottom: 1rem;">📁</div>
-                <h3>Selected: ${file.name}</h3>
+        // Show selected file info in dedicated element (don't replace file input to preserve events)
+        const selectedInfo = document.getElementById('selected-info');
+        if (selectedInfo) {
+            selectedInfo.innerHTML = `
+                <h4>Selected: ${file.name}</h4>
                 <p>Size: ${(file.size / (1024 * 1024)).toFixed(1)} MB</p>
-                <button class="upload-btn" onclick="location.reload()">Choose Different File</button>
+                <div style="margin-top:8px;"><button id="choose-different" class="upload-btn">Choose Different File</button></div>
             `;
+            const chooseBtn = document.getElementById('choose-different');
+            if (chooseBtn) chooseBtn.addEventListener('click', () => document.getElementById('file-input').click());
         }
 
         // Show inline preview if possible
@@ -124,11 +125,18 @@ class VideoProcessor {
             // ignore preview errors
         }
 
+        // Debug: log selection
+        console.log('Selected file:', file.name, file.type, file.size);
+        this.showStatus(`Selected ${file.name}`, 'info');
+
         this.selectedFile = file;
         this.updateUI();
     }
 
     async startProcessing() {
+        console.log('startProcessing invoked');
+        this.showStatus('Starting processing...', 'info');
+
         if (!this.selectedFile) {
             this.showStatus('Please select a video file first.', 'error');
             return;
@@ -136,7 +144,7 @@ class VideoProcessor {
 
         const toolName = this.getCurrentTool();
         if (!toolName) {
-            this.showStatus('Unable to determine tool.', 'error');
+            this.showStatus('Unable to determine tool. Make sure you are on a tool page.', 'error');
             return;
         }
 
@@ -153,9 +161,9 @@ class VideoProcessor {
         }
 
         try {
-            // Start processing
-            this.showStatus('Starting processing...', 'info');
             this.setProcessingState(true);
+
+            console.log('Uploading file to', `/process/${toolName}`);
 
             const response = await fetch(`/process/${toolName}`, {
                 method: 'POST',
@@ -163,10 +171,15 @@ class VideoProcessor {
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const text = await response.text().catch(() => '');
+                console.error('Upload failed:', response.status, response.statusText, text);
+                this.showStatus(`Failed to start processing: ${response.status} ${response.statusText}`, 'error');
+                this.setProcessingState(false);
+                return;
             }
 
             const result = await response.json();
+            console.log('Upload response:', result);
             this.jobId = result.job_id;
 
             // If server returned an input_url, set the 'View Uploaded' button
@@ -185,7 +198,7 @@ class VideoProcessor {
 
         } catch (error) {
             console.error('Processing error:', error);
-            this.showStatus('Failed to start processing. Please try again.', 'error');
+            this.showStatus('Failed to start processing. Please check console and server logs.', 'error');
             this.setProcessingState(false);
         }
     }
