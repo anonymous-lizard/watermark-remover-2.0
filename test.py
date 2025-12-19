@@ -148,6 +148,68 @@ def test_html_pages():
     print("✓ All HTML pages present and valid")
     return True
 
+def test_basic_processing():
+    """Create a small synthetic video and run watermark & caption removal to validate processors"""
+    print("\nTesting basic processing (synthetic video)...")
+
+    try:
+        import cv2
+        import numpy as np
+    except Exception as e:
+        print(f"⚠ Skipping basic processing test (missing cv2/numpy): {e}")
+        return True
+
+    from processors.inpainting import WatermarkRemover, CaptionRemover
+    from processors.utils import save_video_frames
+    import time
+
+    # Create temp dirs
+    Path('temp/uploads').mkdir(parents=True, exist_ok=True)
+    Path('temp/outputs').mkdir(parents=True, exist_ok=True)
+
+    # Create synthetic frames (64x64, 20 frames) with a small watermark rectangle
+    frames = []
+    for i in range(20):
+        frame = np.full((64, 64, 3), 120, dtype=np.uint8)
+        # Moving watermark rectangle
+        x = 40
+        y = 5 + (i % 5)
+        cv2.rectangle(frame, (x, y), (x+18, y+10), (255, 255, 255), -1)
+        cv2.putText(frame, 'WM', (x+2, y+8), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,0), 1)
+        frames.append(frame)
+
+    # Save sample input for debugging
+    input_path = 'temp/uploads/synthetic_sample.mp4'
+    fps = 10.0
+    save_video_frames(frames, input_path, fps=fps)
+
+    # Run watermark remover
+    wm = WatermarkRemover()
+    start = time.time()
+    out_frames_wm = wm.process(frames, {})
+    duration_wm = time.time() - start
+    print(f"Watermark removal took {duration_wm:.2f}s, frames out: {len(out_frames_wm)}")
+
+    # Run caption remover
+    cm = CaptionRemover()
+    start = time.time()
+    out_frames_cm = cm.process(frames, {})
+    duration_cm = time.time() - start
+    print(f"Caption removal took {duration_cm:.2f}s, frames out: {len(out_frames_cm)}")
+
+    # Basic validation
+    if len(out_frames_wm) != len(frames) or len(out_frames_cm) != len(frames):
+        print("✗ Processing changed frame count unexpectedly")
+        return False
+
+    # Save output for manual inspection
+    save_video_frames(out_frames_wm, 'temp/outputs/synthetic_wm_processed.mp4', fps=fps)
+    save_video_frames(out_frames_cm, 'temp/outputs/synthetic_cm_processed.mp4', fps=fps)
+
+    print("✓ Basic processing completed and outputs saved")
+    return True
+
+
 def main():
     """Run all tests"""
     print("🧪 Sora Video Processor - Test Suite")
@@ -157,7 +219,8 @@ def main():
         test_file_structure,
         test_imports,
         test_pipeline_creation,
-        test_html_pages
+        test_html_pages,
+        test_basic_processing
     ]
 
     passed = 0

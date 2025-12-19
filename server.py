@@ -219,12 +219,23 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
         elif tool_name == "full-pipeline":
             # Full pipeline processing using pipeline orchestrator
             from pipeline import create_full_pipeline
-            pipeline = create_full_pipeline(parsed_options or {})
+            pipeline = create_full_pipeline(options or {})
 
-            # Execute pipeline
-            success = pipeline.execute(input_path, output_path, progress_callback=lambda p, msg: None)
+            # Execute pipeline and write directly to output path to avoid storing frames
+            output_dir = Path(CONFIG["processing"]["temp_dir"]) / "outputs"
+            output_dir.mkdir(exist_ok=True)
+            pipeline_output = output_dir / f"{job_id}_processed.mp4"
+
+            success = pipeline.execute(input_path, str(pipeline_output), progress_callback=lambda p, msg: update_job_status(job_id, "processing", percentage=int(p * 100)))
             if not success:
                 raise Exception("Pipeline execution failed")
+
+            update_job_status(job_id, "completed",
+                             output_path=str(pipeline_output),
+                             file_size=pipeline_output.stat().st_size)
+
+            logger.info(f"Processing completed for job {job_id} (full-pipeline)")
+            return
 
         # Save processed video
         output_dir = Path(CONFIG["processing"]["temp_dir"]) / "outputs"

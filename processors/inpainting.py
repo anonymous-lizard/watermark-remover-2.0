@@ -19,9 +19,30 @@ class BaseInpainter:
         self.inpaint_method = cv2.INPAINT_TELEA
 
     def process_frame(self, frame: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        """Process single frame with inpainting"""
+        """Process single frame with inpainting (whole-frame fallback)"""
         return cv2.inpaint(frame, mask, self.inpaint_radius, self.inpaint_method)
 
+    def process_roi(self, frame: np.ndarray, mask: np.ndarray, bbox: Tuple[int, int, int, int]) -> np.ndarray:
+        """Process only the bounding-box region for faster inpainting"""
+        x, y, w, h = bbox
+        # Defensive checks
+        h_frame, w_frame = frame.shape[:2]
+        x = max(0, min(x, w_frame-1))
+        y = max(0, min(y, h_frame-1))
+        w = max(1, min(w, w_frame - x))
+        h = max(1, min(h, h_frame - y))
+
+        roi_frame = frame[y:y+h, x:x+w]
+        roi_mask = mask[y:y+h, x:x+w]
+
+        # If roi_mask is empty (no mask), fallback to original
+        if roi_mask.sum() == 0:
+            return frame
+
+        inpainted_roi = cv2.inpaint(roi_frame, roi_mask, self.inpaint_radius, self.inpaint_method)
+        result = frame.copy()
+        result[y:y+h, x:x+w] = inpainted_roi
+        return result
     def get_bbox(self, frame: np.ndarray, options: Dict) -> Optional[Tuple[int, int, int, int]]:
         """Get bounding box for inpainting"""
         if options.get('manual_bbox'):
@@ -65,8 +86,8 @@ class WatermarkRemover(BaseInpainter):
             # Create mask
             mask = create_mask(frame, bbox)
 
-            # Inpaint current frame
-            inpainted = self.process_frame(frame, mask)
+            # Perform ROI inpainting (faster than whole-frame)
+            inpainted = self.process_roi(frame, mask, bbox)
 
             # Temporal blending if enabled and enough neighbors
             if n_frames > 0 and len(frames) > n_frames:
@@ -122,7 +143,8 @@ class CaptionRemover(BaseInpainter):
 
             if bbox:
                 mask = create_mask(frame, bbox)
-                inpainted = self.process_frame(frame, mask)
+                # Use ROI inpainting for performance
+                inpainted = self.process_roi(frame, mask, bbox)
                 processed_frames.append(inpainted)
             else:
                 processed_frames.append(frame)
