@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sora Video Processor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Sora Video Processor</h1>
+            <p>Local, Private, Powerful</p>
+        </header>
+
+        <div class="tools-grid">
+            <div class="tool-card" onclick="window.location.href='/tool/watermark-removal'">
+                <span class="icon">🎯</span>
+                <h3>Remove Watermark</h3>
+                <p>Remove Sora watermarks and moving overlays with dynamic inpainting</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/caption-removal'">
+                <span class="icon">📝</span>
+                <h3>Remove Captions</h3>
+                <p>Remove text overlays and subtitles from videos</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/stabilization'">
+                <span class="icon">🎥</span>
+                <h3>Video Stabilization</h3>
+                <p>Smooth shaky footage using optical flow motion estimation</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/denoising'">
+                <span class="icon">✨</span>
+                <h3>Reduce Noise</h3>
+                <p>Remove compression artifacts and noise with advanced filtering</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/color-correction'">
+                <span class="icon">🎨</span>
+                <h3>Color Correction</h3>
+                <p>Enhance brightness, contrast, and saturation</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/upscaling'">
+                <span class="icon">📐</span>
+                <h3>Upscale Resolution</h3>
+                <p>Increase video resolution to 720p or 1080p</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/crop-pad'">
+                <span class="icon">✂️</span>
+                <h3>Crop/Pad</h3>
+                <p>Adjust aspect ratio for different platforms</p>
+            </div>
+
+            <div class="tool-card" onclick="window.location.href='/tool/full-pipeline'">
+                <span class="icon">⚡</span>
+                <h3>Full Pipeline</h3>
+                <p>All-in-one processing with customizable steps</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

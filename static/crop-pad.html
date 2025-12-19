@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crop/Pad - Sora Video Processor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="tool-header">
+            <a href="/" class="back-link">← Back to Tools</a>
+            <h1 class="tool-title">Crop/Pad/Letterbox</h1>
+        </div>
+
+        <div id="upload-area" class="upload-section">
+            <div class="upload-icon">📁</div>
+            <h3>Upload Video</h3>
+            <p>Drag & drop or click to browse</p>
+            <p>Supported: MP4, MOV, AVI (max 1080p)</p>
+            <input type="file" id="file-input" accept="video/*">
+            <button id="upload-btn" class="upload-btn">Choose File</button>
+        </div>
+
+        <div id="crop-options" class="options-section">
+            <h3>Processing Options</h3>
+
+            <div class="option-group">
+                <label>Target Aspect Ratio</label>
+                <select name="target_aspect" style="width: 100%; padding: var(--space-2); border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="16:9" selected>16:9 (YouTube, TV)</option>
+                    <option value="9:16">9:16 (Instagram Stories, TikTok)</option>
+                    <option value="1:1">1:1 (Instagram Square)</option>
+                    <option value="4:3">4:3 (Traditional, DVD)</option>
+                </select>
+            </div>
+
+            <div class="option-group">
+                <label>Method</label>
+                <select name="method" style="width: 100%; padding: var(--space-2); border: 1px solid var(--border); border-radius: 4px;">
+                    <option value="letterbox" selected>Letterbox (Add black bars)</option>
+                    <option value="crop">Crop (Center crop to fit)</option>
+                    <option value="pad">Pad (Similar to letterbox)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="process-section">
+            <button id="process-btn" class="process-btn" disabled>🚀 Process Video</button>
+        </div>
+
+        <div id="progress-section" class="progress-section hidden">
+            <h3>Processing Status</h3>
+            <div class="progress-info">
+                <span id="progress-text">Preparing...</span>
+                <span id="eta-text">Estimated time: calculating...</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+        </div>
+
+        <div id="download-section" class="download-section hidden">
+            <a id="download-btn" class="download-btn" href="#" download>⬇️ Download Processed Video</a>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

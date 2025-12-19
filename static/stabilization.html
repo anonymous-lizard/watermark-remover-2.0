@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Stabilization - Sora Video Processor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="tool-header">
+            <a href="/" class="back-link">← Back to Tools</a>
+            <h1 class="tool-title">Video Stabilization</h1>
+        </div>
+
+        <div id="upload-area" class="upload-section">
+            <div class="upload-icon">📁</div>
+            <h3>Upload Video</h3>
+            <p>Drag & drop or click to browse</p>
+            <p>Supported: MP4, MOV, AVI (max 1080p)</p>
+            <input type="file" id="file-input" accept="video/*">
+            <button id="upload-btn" class="upload-btn">Choose File</button>
+        </div>
+
+        <div id="stabilization-options" class="options-section">
+            <h3>Processing Options</h3>
+
+            <div class="option-group">
+                <label>Stabilization Strength</label>
+                <div class="slider-group">
+                    <input type="range" name="smoothness" min="0" max="1" value="0.5" step="0.1">
+                    <span class="value">0.5</span>
+                </div>
+                <small style="color: var(--gray-text);">0.0 = original, 1.0 = maximum smooth</small>
+            </div>
+        </div>
+
+        <div class="process-section">
+            <button id="process-btn" class="process-btn" disabled>🚀 Process Video</button>
+        </div>
+
+        <div id="progress-section" class="progress-section hidden">
+            <h3>Processing Status</h3>
+            <div class="progress-info">
+                <span id="progress-text">Preparing...</span>
+                <span id="eta-text">Estimated time: calculating...</span>
+            </div>
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+        </div>
+
+        <div id="download-section" class="download-section hidden">
+            <a id="download-btn" class="download-btn" href="#" download>⬇️ Download Processed Video</a>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
