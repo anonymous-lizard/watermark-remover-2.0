@@ -217,19 +217,14 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
             processed_frames = processor.process(frames, options or {})
 
         elif tool_name == "full-pipeline":
-            # Full pipeline processing
-            pipeline = [
-                inpainting.WatermarkRemover(),
-                denoising.NoiseReducer(),
-                color_correction.ColorCorrector(),
-                upscaling.VideoUpscaler(),
-                stabilization.VideoStabilizer(),
-                crop_pad.AspectAdjuster()
-            ]
+            # Full pipeline processing using pipeline orchestrator
+            from pipeline import create_full_pipeline
+            pipeline = create_full_pipeline(parsed_options or {})
 
-            for step in pipeline:
-                if options and options.get(f"enable_{step.__class__.__name__.lower()}", True):
-                    processed_frames = step.process(processed_frames, options or {})
+            # Execute pipeline
+            success = pipeline.execute(input_path, output_path, progress_callback=lambda p, msg: None)
+            if not success:
+                raise Exception("Pipeline execution failed")
 
         # Save processed video
         output_dir = Path(CONFIG["processing"]["temp_dir"]) / "outputs"

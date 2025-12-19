@@ -145,17 +145,35 @@ Phone (Browser) ← Wi-Fi → PC Server (FastAPI)
 ```
 sora-video-processor/
 ├── server.py              # FastAPI server
-├── pipeline.py           # Processing orchestration
-├── processors/           # Individual processing modules
-│   ├── inpainting.py
-│   ├── stabilization.py
-│   └── ...
-├── static/               # Web interface
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/app.js
-├── temp/                 # Temporary files
-└── requirements.txt
+├── pipeline.py            # Processing orchestration
+├── processors/            # Individual processing modules
+│   ├── inpainting.py      # Watermark/caption removal
+│   ├── stabilization.py   # Video stabilization
+│   ├── upscaling.py       # Resolution enhancement
+│   ├── denoising.py       # Noise reduction
+│   ├── color_correction.py # Color enhancements
+│   ├── crop_pad.py        # Aspect ratio adjustment
+│   ├── utils.py           # Helper functions
+│   └── __init__.py        # Package initialization
+├── static/                # Web interface
+│   ├── index.html         # Home page
+│   ├── watermark-removal.html
+│   ├── caption-removal.html
+│   ├── stabilization.html
+│   ├── denoising.html
+│   ├── color-correction.html
+│   ├── upscaling.html
+│   ├── crop-pad.html
+│   ├── full-pipeline.html
+│   ├── css/
+│   │   └── style.css      # ViewMax.io inspired styles
+│   └── js/
+│       └── app.js         # Frontend JavaScript
+├── temp/                  # Temporary files
+│   ├── uploads/           # Upload directory
+│   └── outputs/           # Processed videos
+├── requirements.txt       # Python dependencies
+└── README.md              # This documentation
 ```
 
 ### Adding New Tools
