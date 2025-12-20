@@ -38,6 +38,43 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
+"""
+Sora Video Processor - Local PC Server
+FastAPI backend for video processing tools
+"""
+
+import asyncio
+import json
+import logging
+import shutil
+import time
+import uuid
+from pathlib import Path
+from typing import Dict, Optional, List, Any
+
+try:
+    import cv2
+    import numpy as np
+    OPENCV_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    np = None
+    OPENCV_AVAILABLE = False
+    print("Warning: OpenCV not available. Video processing will be disabled.")
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+import uvicorn
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Configuration
 CONFIG = {
     "server": {
         "host": "0.0.0.0",
@@ -59,6 +96,8 @@ CONFIG = {
 
 # Global job status tracking
 job_statuses: Dict[str, Dict] = {}
+# WebSocket connections per job id: job_id -> list(WebSocket)
+job_websockets: Dict[str, List[WebSocket]] = {}
 
 app = FastAPI(title="Sora Video Processor", version="1.0.0")
 
@@ -87,7 +126,7 @@ def get_job_status(job_id: str) -> Dict:
     return job_statuses.get(job_id, {"status": "not_found"})
 
 def update_job_status(job_id: str, status: str, **kwargs):
-    """Update job status"""
+    """Update job status and broadcast to any websocket listeners"""
     if job_id not in job_statuses:
         job_statuses[job_id] = {}
 
@@ -96,6 +135,33 @@ def update_job_status(job_id: str, status: str, **kwargs):
         "updated_at": time.time(),
         **kwargs
     })
+
+    # Schedule a broadcast of the updated status to any connected websocket clients.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_broadcast_job_update(job_id))
+    except RuntimeError:
+        # no running loop (e.g., during startup or synchronous tests); ignore
+        pass
+
+async def _broadcast_job_update(job_id: str):
+    """Send the current job status to all connected websockets for the job"""
+    status = get_job_status(job_id)
+    websockets = job_websockets.get(job_id, [])
+    alive_sockets = []
+    for ws in list(websockets):
+        try:
+            await ws.send_json(status)
+            alive_sockets.append(ws)
+        except Exception:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+    if alive_sockets:
+        job_websockets[job_id] = alive_sockets
+    else:
+        job_websockets.pop(job_id, None)
 
 def generate_file_id() -> str:
     """Generate unique file ID"""
@@ -114,7 +180,7 @@ async def save_upload_file(upload_file: UploadFile) -> str:
         raise HTTPException(status_code=400, detail="Unsupported file format")
 
     upload_dir = Path(CONFIG["processing"]["temp_dir"]) / "uploads"
-    upload_dir.mkdir(exist_ok=True)
+    upload_dir.mkdir(exist_ok=True, parents=True)
 
     file_path = upload_dir / f"{file_id}{file_extension}"
 
@@ -136,12 +202,40 @@ async def cleanup_old_files():
     for dir_path in [temp_dir / "uploads", temp_dir / "outputs"]:
         if dir_path.exists():
             for file_path in dir_path.glob("*"):
-                if file_path.stat().st_mtime < cutoff_time:
-                    try:
-                        file_path.unlink()
-                        logger.info(f"Cleaned up old file: {file_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to cleanup {file_path}: {e}")
+                try:
+                    if file_path.stat().st_mtime < cutoff_time:
+                        try:
+                            file_path.unlink()
+                            logger.info(f"Cleaned up old file: {file_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to cleanup {file_path}: {e}")
+                except Exception:
+                    continue
+
+# Helper to process a single frame with a generic processor
+def _process_single_frame_with_processor(processor: Any, frame: Any, options: Dict = None) -> Any:
+    """
+    Try to process a single frame robustly:
+      - Prefer calling processor.process([frame], options) -> list and return first
+      - Fallback to process_frame if implemented
+      - On any exception return original frame (fail-safe)
+    """
+    options = options or {}
+    try:
+        if hasattr(processor, "process") and callable(getattr(processor, "process")):
+            out = processor.process([frame], options)
+            if isinstance(out, list) and len(out) > 0:
+                return out[0]
+            else:
+                return frame
+        elif hasattr(processor, "process_frame") and callable(getattr(processor, "process_frame")):
+            try:
+                return processor.process_frame(frame, options)
+            except TypeError:
+                return frame
+    except Exception as e:
+        logger.debug(f"Processor single-frame processing failed (falling back). Error: {e}")
+        return frame
 
 # Background task for processing
 async def process_video_task(job_id: str, tool_name: str, input_path: str, options: Dict = None):
@@ -150,7 +244,7 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
         update_job_status(job_id, "processing", current_frame=0, total_frames=0)
 
         # Load video
-        if not OPENCV_AVAILABLE:
+        if not OPENCV_AVAILABLE or cv2 is None:
             raise Exception("Video processing not available - OpenCV not installed")
 
         cap = cv2.VideoCapture(input_path)
@@ -160,17 +254,29 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
         # Get video properties
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 0
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 0
 
-        update_job_status(job_id, "processing", total_frames=total_frames)
+        update_job_status(job_id, "processing", total_frames=total_frames, fps=fps)
 
         # Output setup
         output_dir = Path(CONFIG["processing"]["temp_dir"]) / "outputs"
-        output_dir.mkdir(exist_ok=True)
+        output_dir.mkdir(exist_ok=True, parents=True)
         output_path = output_dir / f"{job_id}_processed.mp4"
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # fall back to safe width/height if unreadable
+        if width <= 0 or height <= 0:
+            # read a frame to get size
+            ret, frame_sample = cap.read()
+            if not ret:
+                cap.release()
+                raise Exception("Failed to read frame size from video")
+            height, width = frame_sample.shape[:2]
+            # rewind by reopening (simpler)
+            cap.release()
+            cap = cv2.VideoCapture(input_path)
+
         out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
         options = options or {}
@@ -203,8 +309,8 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
             window = deque()
             frame_idx = 0
 
-            # Pre-fill window with first frames
-            while len(window) < half and True:
+            # Pre-fill window with first frames up to half
+            while len(window) < half:
                 ret, frame = cap.read()
                 if not ret:
                     break
@@ -216,52 +322,45 @@ async def process_video_task(job_id: str, tool_name: str, input_path: str, optio
                 if ret:
                     window.append(frame)
                 else:
-                    # No more frames, process remaining in window
+                    # No more frames, if window empty break, else append None to allow flushing
                     if not window:
                         break
-                    # pad with None at the end
                     window.append(None)
 
                 # Process center frame when we have enough context
                 if len(window) >= (half + 1):
                     center_idx = half
-                    center_frame = window[0] if len(window) == 1 and frame is None else window[center_idx]
+                    try:
+                        center_frame = window[center_idx]
+                    except Exception:
+                        center_frame = window[0] if window else None
 
                     if center_frame is None:
-                        # pop and continue
                         window.popleft()
-                        frame_idx += 1
                         continue
 
                     processed_frame = center_frame
 
-                    # If processor supports get_bbox/process_roi use those for watermark/caption
+                    # Watermark/caption ROI + temporal blending path
                     if tool_name in ["watermark-removal", "caption-removal"]:
+                        # get_bbox method exists on BaseInpainter
                         bbox = processor.get_bbox(center_frame, options)
                         if bbox is not None:
-                            mask = create_mask(center_frame, bbox)
+                            mask = utils.create_mask(center_frame, bbox)
                             # perform ROI inpainting
                             processed_frame = processor.process_roi(center_frame, mask, bbox)
 
                             # temporal blending using neighbor frames in window (excluding center)
                             neighbors = []
-                            # Collect neighbor frames from window excluding None and center index
                             for i, f in enumerate(list(window)):
                                 if i != center_idx and f is not None:
                                     neighbors.append(f)
                             if neighbors:
-                                processed_frame = temporal_blend(processed_frame, neighbors, bbox)
+                                processed_frame = utils.temporal_blend(processed_frame, neighbors, bbox)
 
                     else:
-                        # Per-frame processors: try to use process_frame or fall back to process([frame])[0]
-                        if hasattr(processor, 'process_frame'):
-                            try:
-                                processed_frame = processor.process_frame(center_frame, options)  # type: ignore
-                            except Exception:
-                                # fallback
-                                processed_frame = processor.process([center_frame], options)[0]
-                        else:
-                            processed_frame = processor.process([center_frame], options)[0]
+                        # Per-frame processors: robust invocation
+                        processed_frame = _process_single_frame_with_processor(processor, center_frame, options)
 
                     # Write processed frame
                     out.write(processed_frame)
@@ -430,6 +529,30 @@ async def get_progress(job_id: str):
 
     return status
 
+@app.websocket("/ws/progress/{job_id}")
+async def websocket_progress(websocket: WebSocket, job_id: str):
+    """WebSocket endpoint for real-time progress updates for a job"""
+    await websocket.accept()
+    job_websockets.setdefault(job_id, []).append(websocket)
+    try:
+        status = get_job_status(job_id)
+        await websocket.send_json(status)
+        while True:
+            try:
+                await websocket.receive_text()
+            except WebSocketDisconnect:
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if job_id in job_websockets:
+            try:
+                job_websockets[job_id].remove(websocket)
+            except ValueError:
+                pass
+            if not job_websockets[job_id]:
+                job_websockets.pop(job_id, None)
+
 @app.get("/download/{job_id}")
 async def download_result(job_id: str, request: Request):
     """Download processed video (supports Range requests)"""
@@ -455,7 +578,6 @@ def _file_response_with_range(file_path: str, request: Request, filename: str = 
     range_header = request.headers.get('range')
 
     if range_header:
-        # Parse range header: bytes=start-end
         try:
             range_val = range_header.strip().split('=')[1]
             start_s, end_s = range_val.split('-')
@@ -464,7 +586,7 @@ def _file_response_with_range(file_path: str, request: Request, filename: str = 
         except Exception:
             raise HTTPException(status_code=400, detail='Invalid Range header')
 
-        if start >= file_size or end >= file_size:
+        if start >= file_size or end >= file_size or end < start:
             return Response(status_code=416)
 
         length = end - start + 1
@@ -525,9 +647,9 @@ async def cleanup_job(job_id: str):
 async def startup_event():
     """Startup tasks"""
     # Create temp directories
-    Path(CONFIG["processing"]["temp_dir"]).mkdir(exist_ok=True)
-    Path(CONFIG["processing"]["temp_dir"], "uploads").mkdir(exist_ok=True)
-    Path(CONFIG["processing"]["temp_dir"], "outputs").mkdir(exist_ok=True)
+    Path(CONFIG["processing"]["temp_dir"]).mkdir(exist_ok=True, parents=True)
+    Path(CONFIG["processing"]["temp_dir"], "uploads").mkdir(exist_ok=True, parents=True)
+    Path(CONFIG["processing"]["temp_dir"], "outputs").mkdir(exist_ok=True, parents=True)
 
     # Start cleanup task
     asyncio.create_task(cleanup_scheduler())

@@ -27,6 +27,41 @@ class VideoProcessor {
                 e.preventDefault();
                 uploadArea.classList.add('dragover');
             });
+/**
+ * Sora Video Processor - Frontend JavaScript
+ * Handles file uploads, processing, and downloads
+ *
+ * Enhancements:
+ *  - Uses WebSocket for real-time progress updates when available
+ *  - Falls back to polling (/progress/{jobId}) if WebSocket is not available
+ *  - Keeps existing UI logic intact
+ */
+
+class VideoProcessor {
+    constructor() {
+        this.jobId = null;
+        this.progressInterval = null;
+        this.ws = null;
+        this.init();
+    }
+
+    init() {
+        this.bindEvents();
+        this.updateUI();
+    }
+
+    bindEvents() {
+        // File upload
+        const fileInput = document.getElementById('file-input');
+        const uploadArea = document.getElementById('upload-area');
+        const uploadBtn = document.getElementById('upload-btn');
+
+        if (fileInput && uploadArea) {
+            // Drag and drop
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
 
             uploadArea.addEventListener('dragleave', () => {
                 uploadArea.classList.remove('dragover');
@@ -193,8 +228,11 @@ class VideoProcessor {
                 } catch (e) {}
             }
 
-            // Start progress monitoring
-            this.startProgressMonitoring();
+            // Try to open a websocket connection for progress updates; fallback to polling if it fails
+            this.startWebSocketProgress(this.jobId).catch(err => {
+                console.warn('WebSocket progress unavailable, falling back to polling:', err);
+                this.startProgressMonitoring();
+            });
 
         } catch (error) {
             console.error('Processing error:', error);
@@ -253,6 +291,68 @@ class VideoProcessor {
         return options;
     }
 
+    async startWebSocketProgress(jobId) {
+        if (!("WebSocket" in window)) {
+            throw new Error('WebSocket not supported by browser');
+        }
+
+        // Close any existing websocket or polling
+        this.stopProgressMonitoring();
+        if (this.ws) {
+            try { this.ws.close(); } catch(e) { /* ignore */ }
+            this.ws = null;
+        }
+
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${scheme}://${window.location.host}/ws/progress/${jobId}`;
+        console.log('Connecting websocket to', wsUrl);
+
+        return new Promise((resolve, reject) => {
+            try {
+                this.ws = new WebSocket(wsUrl);
+
+                this.ws.onopen = () => {
+                    console.log('Progress WebSocket opened');
+                    resolve();
+                };
+
+                this.ws.onmessage = (evt) => {
+                    try {
+                        const progress = JSON.parse(evt.data);
+                        this.updateProgress(progress);
+
+                        if (progress.status === 'completed') {
+                            this.handleProcessingComplete(progress);
+                        } else if (progress.status === 'failed') {
+                            this.handleProcessingError(progress);
+                        }
+                    } catch (e) {
+                        console.warn('Invalid websocket message', e);
+                    }
+                };
+
+                this.ws.onclose = (evt) => {
+                    console.log('Progress WebSocket closed, falling back to polling');
+                    this.ws = null;
+                    // If processing still ongoing, fall back to polling
+                    if (this.jobId) {
+                        this.startProgressMonitoring();
+                    }
+                };
+
+                this.ws.onerror = (err) => {
+                    console.warn('WebSocket error:', err);
+                    try { this.ws.close(); } catch(e) {}
+                    this.ws = null;
+                    reject(err);
+                };
+            } catch (err) {
+                this.ws = null;
+                reject(err);
+            }
+        });
+    }
+
     async startProgressMonitoring() {
         if (this.progressInterval) {
             clearInterval(this.progressInterval);
@@ -260,6 +360,9 @@ class VideoProcessor {
 
         this.progressInterval = setInterval(async () => {
             try {
+                if (!this.jobId) {
+                    throw new Error('Missing jobId for progress monitoring');
+                }
                 const response = await fetch(`/progress/${this.jobId}`);
                 if (!response.ok) {
                     throw new Error('Failed to get progress');
@@ -312,6 +415,10 @@ class VideoProcessor {
 
     handleProcessingComplete(progress) {
         this.stopProgressMonitoring();
+        if (this.ws) {
+            try { this.ws.close(); } catch(e) {}
+            this.ws = null;
+        }
         this.setProcessingState(false);
 
         this.showStatus('Processing completed successfully!', 'success');
@@ -332,6 +439,10 @@ class VideoProcessor {
 
     handleProcessingError(progress) {
         this.stopProgressMonitoring();
+        if (this.ws) {
+            try { this.ws.close(); } catch(e) {}
+            this.ws = null;
+        }
         this.setProcessingState(false);
 
         const errorMsg = progress.error || 'Processing failed';
@@ -392,6 +503,16 @@ class VideoProcessor {
             return `${minutes}m ${remainingSeconds}s`;
         } else {
             const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${minutes}m`;
+        }
+    }
+}
+
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    window.videoProcessor = new VideoProcessor();
+});
             const minutes = Math.floor((seconds % 3600) / 60);
             return `${hours}h ${minutes}m`;
         }
